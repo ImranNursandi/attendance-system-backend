@@ -1,0 +1,43 @@
+CREATE DATABASE attendance_system;
+USE attendance_system;
+
+CREATE TABLE departments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    max_clock_in VARCHAR(5) DEFAULT '09:00',
+    max_clock_out VARCHAR(5) DEFAULT '17:00',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE employees (
+    id VARCHAR(50) PRIMARY KEY,
+    department_id INT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id)
+);
+
+CREATE TABLE attendances (
+    id VARCHAR(100) PRIMARY KEY,
+    employee_id VARCHAR(50) NOT NULL,
+    clock_in TIMESTAMP NOT NULL,
+    clock_out TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+);
+
+CREATE TABLE attendance_histories (
+    id VARCHAR(100) PRIMARY KEY,
+    employee_id VARCHAR(50) NOT NULL,
+    attendance_id VARCHAR(100) NOT NULL,
+    date_attendance TIMESTAMP NOT NULL,
+    attendance_type TINYINT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+);
