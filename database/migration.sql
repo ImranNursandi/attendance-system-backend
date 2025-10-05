@@ -1,4 +1,4 @@
--- Attendance System Database Migration - FIXED TO MATCH ERD
+-- Attendance System Database Migration
 -- Created: 03-10-2025
 
 -- Create database
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS departments (
     INDEX idx_department_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Employees table (FIXED to match ERD)
+-- Employees table
 CREATE TABLE IF NOT EXISTS employees (
     id INT AUTO_INCREMENT PRIMARY KEY,
     employee_id VARCHAR(50) NOT NULL UNIQUE,
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS employees (
     INDEX idx_employee_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Attendance table (FIXED to match ERD - added attendance_id)
+-- Attendance table
 CREATE TABLE IF NOT EXISTS attendances (
     id INT AUTO_INCREMENT PRIMARY KEY,
     attendance_id VARCHAR(100) NOT NULL UNIQUE,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS attendances (
     UNIQUE KEY unique_employee_clock_in (employee_id, clock_in_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Attendance history table (FIXED to match ERD structure)
+-- Attendance history table 
 CREATE TABLE IF NOT EXISTS attendance_histories (
     id INT AUTO_INCREMENT PRIMARY KEY,
     employee_id VARCHAR(50) NOT NULL,
@@ -128,7 +128,7 @@ INSERT INTO employees (employee_id, department_id, name, phone, address, positio
 ('EMP007', 2, 'Sarah Chen', '+1234567896', '654 Birch Street, City G, State T', 'Recruitment Specialist', 'active', '2023-03-15'),
 ('EMP008', 3, 'Mike Garcia', '+1234567897', '321 Spruce Avenue, City H, State S', 'Senior Accountant', 'active', '2023-02-28');
 
--- Insert sample attendance records (FIXED - added attendance_id)
+-- Insert sample attendance records
 INSERT INTO attendances (attendance_id, employee_id, clock_in, clock_in_date, clock_out, work_hours, status, notes) VALUES
 ('ATT001', 'EMP001', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
 ('ATT002', 'EMP002', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
@@ -136,7 +136,7 @@ INSERT INTO attendances (attendance_id, employee_id, clock_in, clock_in_date, cl
 ('ATT004', 'EMP004', DATE_SUB(NOW(), INTERVAL 9 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 2 HOUR), 7.0, 'late', 'Late due to traffic'),
 ('ATT005', 'EMP005', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), NULL, NULL, 'present', 'Still working');
 
--- Insert sample attendance history records (FIXED - matching ERD structure)
+-- Insert sample attendance history records
 INSERT INTO attendance_histories (employee_id, attendance_id, date_attendance, attendance_type, description) VALUES
 ('EMP001', 'ATT001', DATE_SUB(NOW(), INTERVAL 8 HOUR), 1, 'Clock In recorded'),
 ('EMP001', 'ATT001', DATE_SUB(NOW(), INTERVAL 1 HOUR), 2, 'Clock Out recorded'),
@@ -157,7 +157,7 @@ INSERT INTO users (username, email, password, role, employee_id, is_active) VALU
 ('sarah.chen', 'sarah.chen@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP007', TRUE),
 ('mike.garcia', 'mike.garcia@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP008', TRUE);
 
--- Update trigger for attendance audit (FIXED)
+-- Update trigger for attendance audit
 DELIMITER //
 CREATE TRIGGER after_attendance_update
 AFTER UPDATE ON attendances
@@ -198,4 +198,4 @@ LEFT JOIN attendances a ON e.employee_id = a.employee_id AND a.clock_in_date = C
 GROUP BY e.id, e.employee_id, e.name, d.name;
 
 -- Display success message
-SELECT 'Database migration completed successfully! ERD structure implemented.' as message;
+SELECT 'Database migration completed successfully!' as message;
