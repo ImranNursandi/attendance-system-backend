@@ -101,6 +101,11 @@ func SetupRoutes(router *gin.Engine) {
 				reports.GET("/attendance", reportController.GenerateAttendanceReport)
 				reports.GET("/summary", reportController.GenerateSummaryReport)
 				reports.GET("/department/:department_id", reportController.GenerateDepartmentReport)
+				
+				// Export routes
+				reports.GET("/export/attendance", reportController.ExportAttendanceReport)
+				reports.GET("/export/summary", reportController.ExportSummaryReport)
+				reports.GET("/export/department/:department_id", reportController.ExportDepartmentReport)
 			}
 
 			// Dashboard routes

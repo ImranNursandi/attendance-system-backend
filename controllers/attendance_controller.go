@@ -110,18 +110,12 @@ func (c *AttendanceController) GetAttendanceLogs(ctx *gin.Context) {
 		return
 	}
 
-	// Convert to response objects
-	var attendanceResponses []models.AttendanceResponse
-	for _, attendance := range attendances {
-		attendanceResponses = append(attendanceResponses, attendance.ToResponse())
-	}
-
 	response := map[string]interface{}{
-		"attendances": attendanceResponses,
+		"attendances": attendances,
 		"pagination":  pagination,
 	}
 
-	utils.SuccessJSON(ctx, http.StatusOK, "Attendance logs retrieved successfully", response)
+	utils.SuccessJSON(ctx, http.StatusOK, "Attendance logs with punctuality data retrieved successfully", response)
 }
 
 // GetEmployeeAttendance godoc
@@ -141,18 +135,13 @@ func (c *AttendanceController) GetEmployeeAttendance(ctx *gin.Context) {
 	startDate := ctx.Query("start_date")
 	endDate := ctx.Query("end_date")
 
-	attendances, err := c.attendanceService.GetEmployeeAttendance(employeeID, startDate, endDate)
+	attendances, err := c.attendanceService.GetEmployeeAttendanceWithPunctuality(employeeID, startDate, endDate)
 	if err != nil {
 		utils.HandleError(ctx, err)
 		return
 	}
 
-	var attendanceResponses []models.AttendanceResponse
-	for _, attendance := range attendances {
-		attendanceResponses = append(attendanceResponses, attendance.ToResponse())
-	}
-
-	utils.SuccessJSON(ctx, http.StatusOK, "Employee attendance retrieved successfully", attendanceResponses)
+	utils.SuccessJSON(ctx, http.StatusOK, "Employee attendance retrieved successfully", attendances)
 }
 
 // GetAttendanceStats godoc

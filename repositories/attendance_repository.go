@@ -151,3 +151,83 @@ func (r *AttendanceRepository) GetAttendanceStats(employeeID string, month, year
 		"avg_work_hours": stats.AvgWorkHours,
 	}, nil
 }
+
+func (r *AttendanceRepository) GetAttendanceWithPunctuality(startDate, endDate string, departmentID uint, employeeID string, page, limit int) ([]models.Attendance, *Pagination, error) {
+	var attendances []models.Attendance
+	
+	query := r.DB.Preload("Employee.Department")
+	
+	// Date filtering
+	if startDate != "" && endDate != "" {
+		query = query.Where("DATE(clock_in) BETWEEN ? AND ?", startDate, endDate)
+	} else if startDate != "" {
+		query = query.Where("DATE(clock_in) >= ?", startDate)
+	} else if endDate != "" {
+		query = query.Where("DATE(clock_in) <= ?", endDate)
+	}
+	
+	// Department filtering
+	if departmentID > 0 {
+		query = query.Joins("JOIN employees ON attendances.employee_id = employees.employee_id").
+			Where("employees.department_id = ?", departmentID)
+	}
+	
+	// Employee filtering
+	if employeeID != "" {
+		query = query.Where("attendances.employee_id = ?", employeeID)
+	}
+	
+	pagination, err := r.Paginate(query.Order("clock_in DESC"), page, limit, &attendances)
+	if err != nil {
+		return nil, nil, r.HandleError(err)
+	}
+	
+	return attendances, pagination, nil
+}
+
+// GetDepartmentPunctualityReport gets punctuality report by department
+func (r *AttendanceRepository) GetDepartmentPunctualityReport(departmentID uint, startDate, endDate string) (map[string]interface{}, error) {
+	var results []struct {
+		Status      string
+		Count       int64
+		EmployeeID  string
+		EmployeeName string
+	}
+	
+	query := r.DB.Table("attendances").
+		Select("attendances.status, COUNT(*) as count, employees.employee_id, employees.name as employee_name").
+		Joins("JOIN employees ON attendances.employee_id = employees.employee_id")
+	
+	if departmentID > 0 {
+		query = query.Where("employees.department_id = ?", departmentID)
+	}
+	
+	if startDate != "" && endDate != "" {
+		query = query.Where("DATE(attendances.clock_in) BETWEEN ? AND ?", startDate, endDate)
+	}
+	
+	err := query.Group("employees.employee_id, employees.name, attendances.status").
+		Order("employees.name, attendances.status").
+		Find(&results).Error
+		
+	if err != nil {
+		return nil, r.HandleError(err)
+	}
+	
+	// Process results into a structured report
+	report := make(map[string]interface{})
+	employeeStats := make(map[string]map[string]int64)
+	
+	for _, result := range results {
+		if _, exists := employeeStats[result.EmployeeID]; !exists {
+			employeeStats[result.EmployeeID] = make(map[string]int64)
+			employeeStats[result.EmployeeID]["employee_name"] = 0 // Placeholder
+		}
+		employeeStats[result.EmployeeID][result.Status] = result.Count
+	}
+	
+	report["employee_stats"] = employeeStats
+	report["total_days"] = len(employeeStats)
+	
+	return report, nil
+}

@@ -1,3 +1,4 @@
+// services/attendance_service.go
 package services
 
 import (
@@ -42,14 +43,19 @@ func (s *AttendanceService) ClockIn(req models.AttendanceRequest) (*models.Atten
 	}
 
 	now := time.Now()
+	
+	// Generate unique attendance ID
+	attendanceID := fmt.Sprintf("ATT-%s-%d", req.EmployeeID, now.Unix())
+	
 	attendance := &models.Attendance{
-		EmployeeID: req.EmployeeID,
-		ClockIn:    now,
-		ClockInDate: time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()),
-		Notes:      req.Notes,
-		Status:     "present",
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		AttendanceID: attendanceID, // ← ADDED
+		EmployeeID:   req.EmployeeID,
+		ClockIn:      now,
+		ClockInDate:  time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()),
+		Notes:        req.Notes,
+		Status:       "present",
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	// Check if clock in is on time
@@ -58,27 +64,15 @@ func (s *AttendanceService) ClockIn(req models.AttendanceRequest) (*models.Atten
 
 	if isLate {
 		attendance.Status = "late"
-		attendance.Notes += fmt.Sprintf(" (Late by %d minutes)", lateMinutes)
+		if attendance.Notes != "" {
+			attendance.Notes += fmt.Sprintf(" | Late by %d minutes", lateMinutes)
+		} else {
+			attendance.Notes = fmt.Sprintf("Late by %d minutes", lateMinutes)
+		}
 	}
 
 	// Create attendance record
 	if err := s.attendanceRepo.CreateAttendance(attendance); err != nil {
-		return nil, err
-	}
-
-	// Create attendance history for clock in
-	historyIn := &models.AttendanceHistory{
-		EmployeeID:     req.EmployeeID,
-		DateAttendance: now,
-		AttendanceType: 1, // Clock In
-		Description:    fmt.Sprintf("Clock In - %s", map[bool]string{true: "Late", false: "On Time"}[isLate]),
-		NewValue:       now.Format("2006-01-02 15:04:05"),
-		ChangedBy:      "system",
-		Reason:         "Regular clock in",
-		CreatedAt:      now,
-	}
-
-	if err := s.attendanceRepo.CreateAttendanceHistory(historyIn); err != nil {
 		return nil, err
 	}
 
@@ -117,11 +111,14 @@ func (s *AttendanceService) ClockOut(req models.ClockOutRequest) (*models.Attend
 
 	// Check if clock out is early
 	employee, _ := s.employeeRepo.FindByEmployeeID(req.EmployeeID)
-	isEarlyLeave, earlyMinutes := false, 0
 	if employee != nil {
-		isEarlyLeave, earlyMinutes = utils.CheckClockOutEarly(now, employee.Department.MaxClockOut, employee.Department.EarlyLeavePenalty)
+		isEarlyLeave, earlyMinutes := utils.CheckClockOutEarly(now, employee.Department.MaxClockOut, employee.Department.EarlyLeavePenalty)
 		if isEarlyLeave {
-			attendance.Notes += fmt.Sprintf(" (Left early by %d minutes)", earlyMinutes)
+			if attendance.Notes != "" {
+				attendance.Notes += fmt.Sprintf(" | Left early by %d minutes", earlyMinutes)
+			} else {
+				attendance.Notes = fmt.Sprintf("Left early by %d minutes", earlyMinutes)
+			}
 		}
 	}
 
@@ -130,35 +127,58 @@ func (s *AttendanceService) ClockOut(req models.ClockOutRequest) (*models.Attend
 		return nil, err
 	}
 
-	// Create attendance history for clock out
-	historyOut := &models.AttendanceHistory{
-		EmployeeID:     req.EmployeeID,
-		DateAttendance: now,
-		AttendanceType: 2, // Clock Out
-		Description:    fmt.Sprintf("Clock Out - %s", map[bool]string{true: "Early Leave", false: "On Time"}[isEarlyLeave]),
-		NewValue:       now.Format("2006-01-02 15:04:05"),
-		ChangedBy:      "system",
-		Reason:         "Regular clock out",
-		CreatedAt:      now,
-	}
-
-	if err := s.attendanceRepo.CreateAttendanceHistory(historyOut); err != nil {
-		return nil, err
-	}
-
 	return attendance, nil
 }
 
-func (s *AttendanceService) GetAttendanceLogs(startDate, endDate string, departmentID uint, employeeID string, page, limit int) ([]models.Attendance, *repositories.Pagination, error) {
-	return s.attendanceRepo.GetAttendanceLogs(startDate, endDate, departmentID, employeeID, page, limit)
+// Enhanced method with punctuality data
+func (s *AttendanceService) GetAttendanceLogs(startDate, endDate string, departmentID uint, employeeID string, page, limit int) ([]models.AttendanceResponse, *repositories.Pagination, error) {
+	attendances, pagination, err := s.attendanceRepo.GetAttendanceLogs(startDate, endDate, departmentID, employeeID, page, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Convert to response with punctuality data
+	var responses []models.AttendanceResponse
+	for _, attendance := range attendances {
+		response := attendance.ToResponse()
+		
+		// Calculate punctuality
+		if attendance.Employee.ID > 0 {
+			dept := attendance.Employee.Department
+			
+			// Check clock-in punctuality
+			isLate, lateMinutes := utils.CheckClockInLate(attendance.ClockIn, dept.MaxClockIn, dept.LateTolerance)
+			
+			// Check clock-out punctuality
+			isEarlyLeave, earlyMinutes := false, 0
+			if attendance.ClockOut != nil {
+				isEarlyLeave, earlyMinutes = utils.CheckClockOutEarly(*attendance.ClockOut, dept.MaxClockOut, dept.EarlyLeavePenalty)
+			}
+			
+			// Set punctuality fields
+			response.IsLate = isLate
+			response.LateMinutes = lateMinutes
+			response.IsEarlyLeave = isEarlyLeave
+			response.EarlyMinutes = earlyMinutes
+			
+			// Overall punctuality status
+			if isLate {
+				response.Punctuality = "late"
+			} else if isEarlyLeave {
+				response.Punctuality = "early_leave"
+			} else {
+				response.Punctuality = "on_time"
+			}
+		}
+		
+		responses = append(responses, response)
+	}
+
+	return responses, pagination, nil
 }
 
 func (s *AttendanceService) GetEmployeeAttendance(employeeID string, startDate, endDate string) ([]models.Attendance, error) {
 	return s.attendanceRepo.GetEmployeeAttendance(employeeID, startDate, endDate)
-}
-
-func (s *AttendanceService) GetAttendanceByID(id uint) (*models.Attendance, error) {
-	return s.attendanceRepo.GetAttendanceByID(id)
 }
 
 func (s *AttendanceService) GetAttendanceStats(employeeID string, month, year int) (map[string]interface{}, error) {
@@ -169,4 +189,44 @@ func (s *AttendanceService) GetAttendanceStats(employeeID string, month, year in
 		year = time.Now().Year()
 	}
 	return s.attendanceRepo.GetAttendanceStats(employeeID, month, year)
+}
+
+func (s *AttendanceService) CalculateAttendancePunctuality(attendance *models.Attendance) *models.AttendanceResponse {
+	response := attendance.ToResponse()
+	
+	if attendance.Employee.ID > 0 {
+		dept := attendance.Employee.Department
+		
+		isLate, lateMinutes, isEarlyLeave, earlyMinutes, punctuality := utils.CalculatePunctualityStatus(
+			attendance.ClockIn,
+			attendance.ClockOut,
+			dept.MaxClockIn,
+			dept.MaxClockOut,
+			dept.LateTolerance,
+			dept.EarlyLeavePenalty,
+		)
+		
+		response.IsLate = isLate
+		response.LateMinutes = lateMinutes
+		response.IsEarlyLeave = isEarlyLeave
+		response.EarlyMinutes = earlyMinutes
+		response.Punctuality = punctuality
+	}
+	
+	return &response
+}
+
+func (s *AttendanceService) GetEmployeeAttendanceWithPunctuality(employeeID string, startDate, endDate string) ([]models.AttendanceResponse, error) {
+	attendances, err := s.attendanceRepo.GetEmployeeAttendance(employeeID, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	var responses []models.AttendanceResponse
+	for _, attendance := range attendances {
+		response := s.CalculateAttendancePunctuality(&attendance)
+		responses = append(responses, *response)
+	}
+
+	return responses, nil
 }

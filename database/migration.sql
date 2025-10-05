@@ -1,4 +1,4 @@
--- Attendance System Database Migration - COMPLETE FIXED VERSION
+-- Attendance System Database Migration - FIXED TO MATCH ERD
 -- Created: 03-10-2025
 
 -- Create database
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS departments (
     INDEX idx_department_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Employees table
+-- Employees table (FIXED to match ERD)
 CREATE TABLE IF NOT EXISTS employees (
     id INT AUTO_INCREMENT PRIMARY KEY,
     employee_id VARCHAR(50) NOT NULL UNIQUE,
@@ -44,9 +44,10 @@ CREATE TABLE IF NOT EXISTS employees (
     INDEX idx_employee_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Attendance table (FIXED - using regular date column)
+-- Attendance table (FIXED to match ERD - added attendance_id)
 CREATE TABLE IF NOT EXISTS attendances (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    attendance_id VARCHAR(100) NOT NULL UNIQUE,
     employee_id VARCHAR(50) NOT NULL,
     clock_in TIMESTAMP NOT NULL,
     clock_in_date DATE,
@@ -63,30 +64,31 @@ CREATE TABLE IF NOT EXISTS attendances (
     INDEX idx_attendance_clock_out (clock_out),
     INDEX idx_attendance_date (clock_in_date),
     INDEX idx_attendance_status (status),
+    INDEX idx_attendance_id (attendance_id),
     UNIQUE KEY unique_employee_clock_in (employee_id, clock_in_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Attendance history table (for audit trail)
+-- Attendance history table (FIXED to match ERD structure)
 CREATE TABLE IF NOT EXISTS attendance_histories (
     id INT AUTO_INCREMENT PRIMARY KEY,
     employee_id VARCHAR(50) NOT NULL,
+    attendance_id VARCHAR(100) NOT NULL,
     date_attendance TIMESTAMP NOT NULL,
     attendance_type TINYINT NOT NULL COMMENT '1: Clock In, 2: Clock Out, 3: Adjustment, 4: Correction',
     description TEXT,
-    previous_value TEXT,
-    new_value TEXT,
-    changed_by VARCHAR(50) NOT NULL,
-    reason TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     FOREIGN KEY (employee_id) REFERENCES employees(employee_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (attendance_id) REFERENCES attendances(attendance_id) ON DELETE CASCADE ON UPDATE CASCADE,
     INDEX idx_history_employee (employee_id),
+    INDEX idx_history_attendance (attendance_id),
     INDEX idx_history_date (date_attendance),
     INDEX idx_history_type (attendance_type),
     INDEX idx_history_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Users table
+-- Users table (KEPT as per your request)
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
@@ -126,6 +128,20 @@ INSERT INTO employees (employee_id, department_id, name, phone, address, positio
 ('EMP007', 2, 'Sarah Chen', '+1234567896', '654 Birch Street, City G, State T', 'Recruitment Specialist', 'active', '2023-03-15'),
 ('EMP008', 3, 'Mike Garcia', '+1234567897', '321 Spruce Avenue, City H, State S', 'Senior Accountant', 'active', '2023-02-28');
 
+-- Insert sample attendance records (FIXED - added attendance_id)
+INSERT INTO attendances (attendance_id, employee_id, clock_in, clock_in_date, clock_out, work_hours, status, notes) VALUES
+('ATT001', 'EMP001', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
+('ATT002', 'EMP002', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
+('ATT003', 'EMP003', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
+('ATT004', 'EMP004', DATE_SUB(NOW(), INTERVAL 9 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 2 HOUR), 7.0, 'late', 'Late due to traffic'),
+('ATT005', 'EMP005', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), NULL, NULL, 'present', 'Still working');
+
+-- Insert sample attendance history records (FIXED - matching ERD structure)
+INSERT INTO attendance_histories (employee_id, attendance_id, date_attendance, attendance_type, description) VALUES
+('EMP001', 'ATT001', DATE_SUB(NOW(), INTERVAL 8 HOUR), 1, 'Clock In recorded'),
+('EMP001', 'ATT001', DATE_SUB(NOW(), INTERVAL 1 HOUR), 2, 'Clock Out recorded'),
+('EMP004', 'ATT004', DATE_SUB(NOW(), INTERVAL 9 HOUR), 1, 'Late Clock In');
+
 -- Insert default admin user (password: admin123)
 INSERT INTO users (username, email, password, role, is_active) VALUES
 ('admin', 'admin@company.com', '$2a$10$lr9BGyvFP2VjwICQX10mQuHk5FKyf14nXYpLRCqLz5Xq7qaK4Uh4G', 'admin', TRUE);
@@ -141,19 +157,8 @@ INSERT INTO users (username, email, password, role, employee_id, is_active) VALU
 ('sarah.chen', 'sarah.chen@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP007', TRUE),
 ('mike.garcia', 'mike.garcia@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP008', TRUE);
 
--- Insert sample attendance records
-INSERT INTO attendances (employee_id, clock_in, clock_in_date, clock_out, work_hours, status, notes) VALUES
-('EMP001', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
-('EMP002', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
-('EMP003', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 1 HOUR), 7.0, 'present', 'Regular work day'),
-('EMP004', DATE_SUB(NOW(), INTERVAL 9 HOUR), CURDATE(), DATE_SUB(NOW(), INTERVAL 2 HOUR), 7.0, 'late', 'Late due to traffic'),
-('EMP005', DATE_SUB(NOW(), INTERVAL 8 HOUR), CURDATE(), NULL, NULL, 'present', 'Still working');
-
-DELIMITER ;
-
--- Create trigger for attendance audit
+-- Update trigger for attendance audit (FIXED)
 DELIMITER //
-
 CREATE TRIGGER after_attendance_update
 AFTER UPDATE ON attendances
 FOR EACH ROW
@@ -161,26 +166,21 @@ BEGIN
     -- Log clock out events
     IF OLD.clock_out IS NULL AND NEW.clock_out IS NOT NULL THEN
         INSERT INTO attendance_histories (
-            employee_id, date_attendance, attendance_type, description, 
-            previous_value, new_value, changed_by, reason
+            employee_id, attendance_id, date_attendance, attendance_type, description
         ) VALUES (
-            NEW.employee_id, NOW(), 2, 'Clock Out Recorded',
-            NULL, NEW.clock_out, 'system', 'Automatic clock out recording'
+            NEW.employee_id, NEW.attendance_id, NOW(), 2, 'Clock Out Recorded'
         );
     END IF;
     
     -- Log status changes
     IF OLD.status != NEW.status THEN
         INSERT INTO attendance_histories (
-            employee_id, date_attendance, attendance_type, description, 
-            previous_value, new_value, changed_by, reason
+            employee_id, attendance_id, date_attendance, attendance_type, description
         ) VALUES (
-            NEW.employee_id, NOW(), 4, 'Status Changed',
-            OLD.status, NEW.status, 'system', 'Automatic status update'
+            NEW.employee_id, NEW.attendance_id, NOW(), 4, CONCAT('Status Changed from ', OLD.status, ' to ', NEW.status)
         );
     END IF;
 END //
-
 DELIMITER ;
 
 -- Create views for common queries
@@ -197,53 +197,5 @@ LEFT JOIN departments d ON e.department_id = d.id
 LEFT JOIN attendances a ON e.employee_id = a.employee_id AND a.clock_in_date = CURDATE()
 GROUP BY e.id, e.employee_id, e.name, d.name;
 
--- Create stored procedure for monthly report
-DELIMITER //
-CREATE PROCEDURE GenerateMonthlyReport(IN month INT, IN year INT)
-BEGIN
-    SELECT 
-        e.employee_id,
-        e.name,
-        d.name as department_name,
-        COUNT(a.id) as working_days,
-        SUM(CASE WHEN a.status = 'late' THEN 1 ELSE 0 END) as late_days,
-        AVG(a.work_hours) as avg_daily_hours
-    FROM employees e
-    JOIN departments d ON e.department_id = d.id
-    LEFT JOIN attendances a ON e.employee_id = a.employee_id 
-        AND MONTH(a.clock_in) = month 
-        AND YEAR(a.clock_in) = year
-    WHERE e.status = 'active'
-    GROUP BY e.id, e.employee_id, e.name, d.name
-    ORDER BY d.name, e.name;
-END //
-DELIMITER ;
-
--- Create function to calculate work hours
-DELIMITER //
-CREATE FUNCTION CalculateWorkHours(clock_in TIMESTAMP, clock_out TIMESTAMP) 
-RETURNS DECIMAL(4,2)
-READS SQL DATA
-DETERMINISTIC
-BEGIN
-    DECLARE hours DECIMAL(4,2);
-    
-    IF clock_out IS NULL THEN
-        RETURN NULL;
-    END IF;
-    
-    SET hours = TIMESTAMPDIFF(MINUTE, clock_in, clock_out) / 60.0;
-    RETURN hours;
-END //
-DELIMITER ;
-
--- Update existing attendance records with calculated work hours
-UPDATE attendances 
-SET work_hours = CalculateWorkHours(clock_in, clock_out) 
-WHERE work_hours IS NULL AND clock_out IS NOT NULL;
-
--- Update clock_in_date for existing records
-UPDATE attendances SET clock_in_date = DATE(clock_in) WHERE clock_in_date IS NULL;
-
 -- Display success message
-SELECT 'Database migration completed successfully!' as message;
+SELECT 'Database migration completed successfully! ERD structure implemented.' as message;
