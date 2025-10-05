@@ -2,173 +2,181 @@ package controllers
 
 import (
 	"attendance-system/models"
-	"attendance-system/repositories"
+	"attendance-system/services"
 	"attendance-system/utils"
 	"net/http"
-	"time"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 type AttendanceController struct {
-	attendanceRepo *repositories.AttendanceRepository
-	employeeRepo   *repositories.EmployeeRepository
-	deptRepo       *repositories.DepartmentRepository
+	attendanceService *services.AttendanceService
 }
 
-func NewAttendanceController(attendanceRepo *repositories.AttendanceRepository, employeeRepo *repositories.EmployeeRepository, deptRepo *repositories.DepartmentRepository) *AttendanceController {
+func NewAttendanceController() *AttendanceController {
 	return &AttendanceController{
-		attendanceRepo: attendanceRepo,
-		employeeRepo:   employeeRepo,
-		deptRepo:       deptRepo,
+		attendanceService: services.NewAttendanceService(),
 	}
 }
 
-type ClockInRequest struct {
-	EmployeeID string `json:"employee_id" binding:"required"`
-}
-
-type ClockOutRequest struct {
-	EmployeeID  string `json:"employee_id" binding:"required"`
-	AttendanceID string `json:"attendance_id" binding:"required"`
-}
-
+// ClockIn godoc
+// @Summary Clock in
+// @Description Record employee clock in
+// @Tags attendance
+// @Accept json
+// @Produce json
+// @Param attendance body models.AttendanceRequest true "Clock in data"
+// @Success 201 {object} utils.Response{data=models.Attendance}
+// @Failure 400 {object} utils.Response
+// @Failure 404 {object} utils.Response
+// @Failure 409 {object} utils.Response
+// @Failure 500 {object} utils.Response
+// @Router /attendance/clock-in [post]
 func (c *AttendanceController) ClockIn(ctx *gin.Context) {
-	var req ClockInRequest
+	var req models.AttendanceRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		utils.ErrorJSON(ctx, http.StatusBadRequest, "Invalid input")
+		utils.ErrorJSON(ctx, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
-	// Check if employee exists
-	employee, err := c.employeeRepo.FindByID(req.EmployeeID)
+	attendance, err := c.attendanceService.ClockIn(req)
 	if err != nil {
-		utils.ErrorJSON(ctx, http.StatusNotFound, "Employee not found")
+		utils.HandleError(ctx, err)
 		return
 	}
 
-	// Check if already clocked in today
-	existingAttendance, _ := c.attendanceRepo.GetAttendanceByEmployeeID(req.EmployeeID, time.Now())
-	if existingAttendance.ID != "" {
-		utils.ErrorJSON(ctx, http.StatusBadRequest, "Already clocked in today")
-		return
-	}
-
-	now := time.Now()
-	attendanceID := uuid.New().String()
-
-	// Create attendance record
-	attendance := models.Attendance{
-		ID:         attendanceID,
-		EmployeeID: req.EmployeeID,
-		ClockIn:    now,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-
-	// Check if clock in is on time
-	department, _ := c.deptRepo.FindByID(employee.DepartmentID)
-	maxClockIn, _ := time.Parse("15:04", department.MaxClockIn)
-	clockInTime := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 0, 0, now.Location())
-	isOnTime := clockInTime.Before(maxClockIn) || clockInTime.Equal(maxClockIn)
-
-	// Create attendance history
-	history := models.AttendanceHistory{
-		ID:             uuid.New().String(),
-		EmployeeID:     req.EmployeeID,
-		AttendanceID:   attendanceID,
-		DateAttendance: now,
-		AttendanceType: 1, // Clock In
-		Description:    "Clock In - " + map[bool]string{true: "On Time", false: "Late"}[isOnTime],
-		CreatedAt:      now,
-		UpdatedAt:      now,
-	}
-
-	if err := c.attendanceRepo.ClockIn(&attendance, &history); err != nil {
-		utils.ErrorJSON(ctx, http.StatusInternalServerError, "Failed to clock in")
-		return
-	}
-
-	response := gin.H{
-		"attendance": attendance,
-		"is_on_time": isOnTime,
-		"message":    "Clock in successful",
-	}
-
-	utils.SuccessJSON(ctx, http.StatusCreated, "Clock in recorded successfully", response)
+	utils.SuccessJSON(ctx, http.StatusCreated, "Clock in successful", attendance.ToResponse())
 }
 
+// ClockOut godoc
+// @Summary Clock out
+// @Description Record employee clock out
+// @Tags attendance
+// @Accept json
+// @Produce json
+// @Param attendance body models.ClockOutRequest true "Clock out data"
+// @Success 200 {object} utils.Response{data=models.Attendance}
+// @Failure 400 {object} utils.Response
+// @Failure 404 {object} utils.Response
+// @Failure 409 {object} utils.Response
+// @Failure 500 {object} utils.Response
+// @Router /attendance/clock-out [put]
 func (c *AttendanceController) ClockOut(ctx *gin.Context) {
-	var req ClockOutRequest
+	var req models.ClockOutRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		utils.ErrorJSON(ctx, http.StatusBadRequest, "Invalid input")
+		utils.ErrorJSON(ctx, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
-	// Check if employee exists
-	employee, err := c.employeeRepo.FindByID(req.EmployeeID)
+	attendance, err := c.attendanceService.ClockOut(req)
 	if err != nil {
-		utils.ErrorJSON(ctx, http.StatusNotFound, "Employee not found")
+		utils.HandleError(ctx, err)
 		return
 	}
 
-	now := time.Now()
-
-	// Check if clock out is on time
-	department, _ := c.deptRepo.FindByID(employee.DepartmentID)
-	maxClockOut, _ := time.Parse("15:04", department.MaxClockOut)
-	clockOutTime := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 0, 0, now.Location())
-	isOnTime := clockOutTime.After(maxClockOut) || clockOutTime.Equal(maxClockOut)
-
-	// Create attendance history
-	history := models.AttendanceHistory{
-		ID:             uuid.New().String(),
-		EmployeeID:     req.EmployeeID,
-		AttendanceID:   req.AttendanceID,
-		DateAttendance: now,
-		AttendanceType: 2, // Clock Out
-		Description:    "Clock Out - " + map[bool]string{true: "On Time", false: "Early"}[isOnTime],
-		CreatedAt:      now,
-		UpdatedAt:      now,
-	}
-
-	if err := c.attendanceRepo.ClockOut(req.AttendanceID, now, &history); err != nil {
-		utils.ErrorJSON(ctx, http.StatusInternalServerError, "Failed to clock out")
-		return
-	}
-
-	response := gin.H{
-		"is_on_time": isOnTime,
-		"message":    "Clock out successful",
-	}
-
-	utils.SuccessJSON(ctx, http.StatusOK, "Clock out recorded successfully", response)
+	utils.SuccessJSON(ctx, http.StatusOK, "Clock out successful", attendance.ToResponse())
 }
 
+// GetAttendanceLogs godoc
+// @Summary Get attendance logs
+// @Description Get paginated attendance logs with filtering options
+// @Tags attendance
+// @Accept json
+// @Produce json
+// @Param start_date query string false "Start date (YYYY-MM-DD)"
+// @Param end_date query string false "End date (YYYY-MM-DD)"
+// @Param department_id query int false "Filter by department ID"
+// @Param employee_id query string false "Filter by employee ID"
+// @Param page query int false "Page number" default(1)
+// @Param limit query int false "Items per page" default(10)
+// @Success 200 {object} utils.Response{data=[]models.AttendanceResponse}
+// @Failure 500 {object} utils.Response
+// @Router /attendance/logs [get]
 func (c *AttendanceController) GetAttendanceLogs(ctx *gin.Context) {
-	date := ctx.Query("date")
-	deptID := ctx.Query("department_id")
+	startDate := ctx.Query("start_date")
+	endDate := ctx.Query("end_date")
+	employeeID := ctx.Query("employee_id")
 	
-	var datePtr *string
-	var deptIDPtr *int
-	
-	if date != "" {
-		datePtr = &date
-	}
-	
-	if deptID != "" {
-		var id int
-		if _, err := fmt.Sscanf(deptID, "%d", &id); err == nil {
-			deptIDPtr = &id
-		}
-	}
-	
-	logs, err := c.attendanceRepo.GetAttendanceLogs(datePtr, deptIDPtr)
+	departmentID, _ := strconv.ParseUint(ctx.Query("department_id"), 10, 32)
+	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+
+	attendances, pagination, err := c.attendanceService.GetAttendanceLogs(
+		startDate, endDate, uint(departmentID), employeeID, page, limit,
+	)
 	if err != nil {
-		utils.ErrorJSON(ctx, http.StatusInternalServerError, "Failed to fetch attendance logs")
+		utils.HandleError(ctx, err)
 		return
 	}
-	
-	utils.SuccessJSON(ctx, http.StatusOK, "Attendance logs fetched successfully", logs)
+
+	// Convert to response objects
+	var attendanceResponses []models.AttendanceResponse
+	for _, attendance := range attendances {
+		attendanceResponses = append(attendanceResponses, attendance.ToResponse())
+	}
+
+	response := map[string]interface{}{
+		"attendances": attendanceResponses,
+		"pagination":  pagination,
+	}
+
+	utils.SuccessJSON(ctx, http.StatusOK, "Attendance logs retrieved successfully", response)
+}
+
+// GetEmployeeAttendance godoc
+// @Summary Get employee attendance
+// @Description Get attendance records for a specific employee
+// @Tags attendance
+// @Accept json
+// @Produce json
+// @Param employee_id path string true "Employee ID"
+// @Param start_date query string false "Start date (YYYY-MM-DD)"
+// @Param end_date query string false "End date (YYYY-MM-DD)"
+// @Success 200 {object} utils.Response{data=[]models.AttendanceResponse}
+// @Failure 500 {object} utils.Response
+// @Router /attendance/employee/{employee_id} [get]
+func (c *AttendanceController) GetEmployeeAttendance(ctx *gin.Context) {
+	employeeID := ctx.Param("employee_id")
+	startDate := ctx.Query("start_date")
+	endDate := ctx.Query("end_date")
+
+	attendances, err := c.attendanceService.GetEmployeeAttendance(employeeID, startDate, endDate)
+	if err != nil {
+		utils.HandleError(ctx, err)
+		return
+	}
+
+	var attendanceResponses []models.AttendanceResponse
+	for _, attendance := range attendances {
+		attendanceResponses = append(attendanceResponses, attendance.ToResponse())
+	}
+
+	utils.SuccessJSON(ctx, http.StatusOK, "Employee attendance retrieved successfully", attendanceResponses)
+}
+
+// GetAttendanceStats godoc
+// @Summary Get attendance statistics
+// @Description Get monthly attendance statistics for an employee
+// @Tags attendance
+// @Accept json
+// @Produce json
+// @Param employee_id path string true "Employee ID"
+// @Param month query int false "Month (1-12)"
+// @Param year query int false "Year"
+// @Success 200 {object} utils.Response{data=map[string]interface{}}
+// @Failure 500 {object} utils.Response
+// @Router /attendance/stats/{employee_id} [get]
+func (c *AttendanceController) GetAttendanceStats(ctx *gin.Context) {
+	employeeID := ctx.Param("employee_id")
+	month, _ := strconv.Atoi(ctx.Query("month"))
+	year, _ := strconv.Atoi(ctx.Query("year"))
+
+	stats, err := c.attendanceService.GetAttendanceStats(employeeID, month, year)
+	if err != nil {
+		utils.HandleError(ctx, err)
+		return
+	}
+
+	utils.SuccessJSON(ctx, http.StatusOK, "Attendance statistics retrieved successfully", stats)
 }
