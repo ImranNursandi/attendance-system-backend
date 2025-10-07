@@ -19,6 +19,14 @@ import (
 // @BasePath /api/v1
 func main() {
 	// Load environment variables
+	log.Println("🔍 Environment Debug:")
+	log.Printf("   PORT: %s", os.Getenv("PORT"))
+	log.Printf("   DATABASE_URL: %s", maskURL(os.Getenv("DATABASE_URL")))
+	log.Printf("   JWT_SECRET: %s", maskSecret(os.Getenv("JWT_SECRET")))
+	log.Printf("   FRONTEND_URL: %s", os.Getenv("FRONTEND_URL"))
+	log.Printf("   GIN_MODE: %s", os.Getenv("GIN_MODE"))
+	log.Printf("   RUN_MIGRATIONS: %s", os.Getenv("RUN_MIGRATIONS"))
+	log.Printf("   APP_ENV: %s", os.Getenv("APP_ENV"))
 	if os.Getenv("APP_ENV") != "production" {
 		if err := godotenv.Load(); err != nil {
 			log.Println("No .env file found, using system environment variables")
