@@ -19,8 +19,12 @@ import (
 // @BasePath /api/v1
 func main() {
 	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
+	if os.Getenv("APP_ENV") != "production" {
+		if err := godotenv.Load(); err != nil {
+			log.Println("No .env file found, using system environment variables")
+		} else {
+			log.Println("✅ Loaded .env file for local development")
+		}
 	}
 
 	// Set Gin mode
