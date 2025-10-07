@@ -35,7 +35,7 @@ func GetConfig() *Config {
 			AppEnv:       getEnv("APP_ENV", "development"),
 			AppPort:      getEnv("PORT", "8080"),
 			GinMode:      getEnv("GIN_MODE", "debug"),
-			DatabaseURL:  getEnv("DATABASE_URL", "DB_URL"),
+			DatabaseURL:  os.Getenv("DATABASE_URL"),
 			JWTSecret:    getEnv("JWT_SECRET", "super-secret-jwt-key-here"),
 			JWTExpiry:    getEnv("JWT_EXPIRY", "24h"),
 			CORSOrigin:   getEnv("CORS_ALLOW_ORIGIN", "*"),
