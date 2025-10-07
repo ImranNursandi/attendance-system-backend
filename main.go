@@ -19,7 +19,14 @@ import (
 // @host localhost:8080
 // @BasePath /api/v1
 func main() {
-	// Load environment variables
+	// Try to load .env file first (will be ignored in production if file doesn't exist)
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using system environment variables")
+	} else {
+		log.Println("✅ Loaded .env file for local development")
+	}
+
+	// Now debug environment variables
 	log.Println("🔍 Environment Debug:")
 	log.Printf("   PORT: %s", os.Getenv("PORT"))
 	log.Printf("   DATABASE_URL: %s", maskURL(os.Getenv("DATABASE_URL")))
@@ -28,13 +35,6 @@ func main() {
 	log.Printf("   GIN_MODE: %s", os.Getenv("GIN_MODE"))
 	log.Printf("   RUN_MIGRATIONS: %s", os.Getenv("RUN_MIGRATIONS"))
 	log.Printf("   APP_ENV: %s", os.Getenv("APP_ENV"))
-	if os.Getenv("APP_ENV") != "production" {
-		if err := godotenv.Load(); err != nil {
-			log.Println("No .env file found, using system environment variables")
-		} else {
-			log.Println("✅ Loaded .env file for local development")
-		}
-	}
 
 	// Set Gin mode
 	if os.Getenv("GIN_MODE") == "release" {
@@ -70,7 +70,6 @@ func main() {
 	}
 
 	log.Printf("🚀 Server running on port %s", port)
-	// log.Printf("📚 API Documentation available at http://localhost:%s/api/v1/docs", port)
 	
 	if err := router.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
