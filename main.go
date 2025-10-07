@@ -75,3 +75,25 @@ func main() {
 		log.Fatal("Failed to start server:", err)
 	}
 }
+
+func maskURL(url string) string {
+	if url == "" {
+		return "(not set)"
+	}
+	// Show only the first part of the URL for security
+	parts := strings.Split(url, "@")
+	if len(parts) > 1 {
+		return parts[0] + "@***"
+	}
+	return "***"
+}
+
+func maskSecret(secret string) string {
+	if secret == "" {
+		return "(not set)"
+	}
+	if len(secret) > 8 {
+		return secret[:4] + "***" + secret[len(secret)-4:]
+	}
+	return "***"
+}
