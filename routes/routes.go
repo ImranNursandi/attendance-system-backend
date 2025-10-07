@@ -22,6 +22,7 @@ func SetupRoutes(router *gin.Engine) {
 	departmentController := controllers.NewDepartmentController()
 	attendanceController := controllers.NewAttendanceController()
 	reportController := controllers.NewReportController()
+	setupController := controllers.NewSetupController()
 
 	// API v1 group
 	api := router.Group("/api/v1")
@@ -36,6 +37,13 @@ func SetupRoutes(router *gin.Engine) {
 			public.POST("/register", authController.Register)
 		}
 
+		// Account setup routes (public)
+		setup := api.Group("/setup")
+		{
+			setup.POST("/complete", setupController.CompleteAccountSetup)
+			// setup.POST("/resend-email", setupController.ResendSetupEmail)
+		}
+
 		// Protected routes (authentication required)
 		protected := api.Group("/")
 		protected.Use(middleware.AuthMiddleware(authService))
@@ -47,6 +55,8 @@ func SetupRoutes(router *gin.Engine) {
 				auth.PUT("/profile", authController.UpdateProfile)
 				auth.PUT("/change-password", authController.ChangePassword)
 				auth.POST("/refresh", authController.RefreshToken)
+				public.POST("/setup-account", authController.SetupAccount)
+				public.GET("/verify-setup-token", authController.VerifySetupToken)
 			}
 
 			// Employee routes

@@ -40,13 +40,13 @@ func (c *EmployeeController) CreateEmployee(ctx *gin.Context) {
 		return
 	}
 
-	employee, err := c.employeeService.CreateEmployee(req)
+	response, err := c.employeeService.CreateEmployee(req)
 	if err != nil {
 		utils.HandleError(ctx, err)
 		return
 	}
 
-	utils.SuccessJSON(ctx, http.StatusCreated, "Employee created successfully", employee.ToResponse())
+	utils.SuccessJSON(ctx, http.StatusCreated, "Employee created successfully", response)
 }
 
 // GetAllEmployees godoc

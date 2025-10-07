@@ -165,3 +165,33 @@ func (r *UserRepository) CheckEmployeeIDExists(employeeID string) (bool, error) 
 	}
 	return count > 0, nil
 }
+
+// FindBySetupToken finds a user by their setup token
+func (r *UserRepository) FindBySetupToken(token string) (*models.User, error) {
+	var user models.User
+	err := r.DB.Preload("Employee.Department").
+		Where("setup_token = ?", token).
+		First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, utils.NewNotFoundError("user not found with this setup token")
+		}
+		return nil, r.HandleError(err)
+	}
+	return &user, nil
+}
+
+// FindByUsernameOrEmail finds a user by username or email
+func (r *UserRepository) FindByUsernameOrEmail(identifier string) (*models.User, error) {
+	var user models.User
+	err := r.DB.Preload("Employee.Department").
+		Where("username = ? OR email = ?", identifier, identifier).
+		First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, utils.NewNotFoundError("user not found")
+		}
+		return nil, r.HandleError(err)
+	}
+	return &user, nil
+}

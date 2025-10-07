@@ -1,5 +1,5 @@
 -- Attendance System Database Migration
--- Created: 03-10-2025
+-- Updated: 03-10-2025
 
 -- Create database
 CREATE DATABASE IF NOT EXISTS attendance_system CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -88,15 +88,17 @@ CREATE TABLE IF NOT EXISTS attendance_histories (
     INDEX idx_history_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Users table (KEPT as per your request)
+-- Updated Users table with setup token fields
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
     email VARCHAR(255) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NULL, -- NULL initially until account setup
     role VARCHAR(50) DEFAULT 'employee',
     employee_id VARCHAR(50) NULL,
-    is_active BOOLEAN DEFAULT TRUE,
+    is_active BOOLEAN DEFAULT FALSE, -- False until account setup complete
+    setup_token VARCHAR(64) NULL UNIQUE, -- Secure token for account setup
+    token_expires TIMESTAMP NULL, -- Token expiration time
     last_login TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -106,7 +108,9 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_user_email (email),
     INDEX idx_user_role (role),
     INDEX idx_user_active (is_active),
-    INDEX idx_user_employee (employee_id)
+    INDEX idx_user_employee (employee_id),
+    INDEX idx_user_setup_token (setup_token),
+    INDEX idx_user_token_expires (token_expires)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert sample departments
@@ -146,16 +150,16 @@ INSERT INTO attendance_histories (employee_id, attendance_id, date_attendance, a
 INSERT INTO users (username, email, password, role, is_active) VALUES
 ('admin', 'admin@company.com', '$2a$10$lr9BGyvFP2VjwICQX10mQuHk5FKyf14nXYpLRCqLz5Xq7qaK4Uh4G', 'admin', TRUE);
 
--- Insert user accounts for employees (password: Welcome123 for all)
-INSERT INTO users (username, email, password, role, employee_id, is_active) VALUES
-('john.doe', 'john.doe@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP001', TRUE),
-('jane.smith', 'jane.smith@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'manager', 'EMP002', TRUE),
-('bob.johnson', 'bob.johnson@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP003', TRUE),
-('alice.brown', 'alice.brown@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP004', TRUE),
-('charlie.wilson', 'charlie.wilson@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP005', TRUE),
-('david.lee', 'david.lee@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP006', TRUE),
-('sarah.chen', 'sarah.chen@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP007', TRUE),
-('mike.garcia', 'mike.garcia@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP008', TRUE);
+-- Insert user accounts for employees with setup tokens (NO PASSWORD initially)
+INSERT INTO users (username, email, password, role, employee_id, is_active, setup_token, token_expires) VALUES
+('john.doe', 'john.doe@company.com', NULL, 'employee', 'EMP001', FALSE, 'setup_token_emp001_abc123def456', DATE_ADD(NOW(), INTERVAL 7 DAY)),
+('jane.smith', 'jane.smith@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'manager', 'EMP002', TRUE, NULL, NULL),
+('bob.johnson', 'bob.johnson@company.com', NULL, 'employee', 'EMP003', FALSE, 'setup_token_emp003_ghi789jkl012', DATE_ADD(NOW(), INTERVAL 7 DAY)),
+('alice.brown', 'alice.brown@company.com', '$2a$10$nt3gEDP3zJAyVPfXOYRG2OQJoeNyGKjqinn33plGEajuha/bWgqf6', 'employee', 'EMP004', TRUE, NULL, NULL),
+('charlie.wilson', 'charlie.wilson@company.com', NULL, 'employee', 'EMP005', FALSE, 'setup_token_emp005_mno345pqr678', DATE_ADD(NOW(), INTERVAL 7 DAY)),
+('david.lee', 'david.lee@company.com', NULL, 'employee', 'EMP006', FALSE, 'setup_token_emp006_stu901vwx234', DATE_ADD(NOW(), INTERVAL 7 DAY)),
+('sarah.chen', 'sarah.chen@company.com', NULL, 'employee', 'EMP007', FALSE, 'setup_token_emp007_yza567bcd890', DATE_ADD(NOW(), INTERVAL 7 DAY)),
+('mike.garcia', 'mike.garcia@company.com', NULL, 'employee', 'EMP008', FALSE, 'setup_token_emp008_efg123hij456', DATE_ADD(NOW(), INTERVAL 7 DAY));
 
 -- Update trigger for attendance audit
 DELIMITER //
@@ -183,6 +187,46 @@ BEGIN
 END //
 DELIMITER ;
 
+-- Create function to generate secure tokens
+DELIMITER //
+CREATE FUNCTION generate_secure_token(length INT) 
+RETURNS VARCHAR(64)
+READS SQL DATA
+DETERMINISTIC
+BEGIN
+    DECLARE chars VARCHAR(62) DEFAULT 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    DECLARE result VARCHAR(64) DEFAULT '';
+    DECLARE i INT DEFAULT 0;
+    
+    WHILE i < length DO
+        SET result = CONCAT(result, SUBSTRING(chars, FLOOR(1 + RAND() * 62), 1));
+        SET i = i + 1;
+    END WHILE;
+    
+    RETURN result;
+END //
+DELIMITER ;
+
+-- Create procedure to clean up expired tokens
+DELIMITER //
+CREATE PROCEDURE cleanup_expired_tokens()
+BEGIN
+    UPDATE users 
+    SET setup_token = NULL, 
+        token_expires = NULL,
+        updated_at = NOW()
+    WHERE token_expires < NOW() 
+    AND setup_token IS NOT NULL;
+END //
+DELIMITER ;
+
+-- Create event to run token cleanup daily
+CREATE EVENT IF NOT EXISTS token_cleanup_event
+ON SCHEDULE EVERY 1 DAY
+STARTS CURRENT_TIMESTAMP
+DO
+CALL cleanup_expired_tokens();
+
 -- Create views for common queries
 CREATE OR REPLACE VIEW employee_attendance_summary AS
 SELECT 
@@ -196,6 +240,24 @@ FROM employees e
 LEFT JOIN departments d ON e.department_id = d.id
 LEFT JOIN attendances a ON e.employee_id = a.employee_id AND a.clock_in_date = CURDATE()
 GROUP BY e.id, e.employee_id, e.name, d.name;
+
+-- Create view for pending account setups
+CREATE OR REPLACE VIEW pending_account_setups AS
+SELECT 
+    u.id as user_id,
+    u.username,
+    u.email,
+    u.setup_token,
+    u.token_expires,
+    e.employee_id,
+    e.name as employee_name,
+    d.name as department_name
+FROM users u
+INNER JOIN employees e ON u.employee_id = e.employee_id
+INNER JOIN departments d ON e.department_id = d.id
+WHERE u.is_active = FALSE 
+AND u.setup_token IS NOT NULL 
+AND u.token_expires > NOW();
 
 -- Display success message
 SELECT 'Database migration completed successfully!' as message;

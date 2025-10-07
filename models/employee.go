@@ -70,3 +70,9 @@ func (e *Employee) ToResponse() EmployeeResponse {
 		Department:   e.Department.ToResponse(),
 	}
 }
+
+type EmployeeCreateResponse struct {
+	Employee   EmployeeResponse `json:"employee"`
+	SetupToken string           `json:"setup_token,omitempty"`
+	Message    string           `json:"message"`
+}

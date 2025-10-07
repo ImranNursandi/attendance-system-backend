@@ -1,29 +1,39 @@
 package services
 
 import (
+	"attendance-system/config"
 	"attendance-system/models"
 	"attendance-system/repositories"
 	"attendance-system/utils"
-	"time"
-	"strings"
-
-	"strconv"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type EmployeeService struct {
 	employeeRepo *repositories.EmployeeRepository
 	userRepo     *repositories.UserRepository
+	emailService *ResendEmailService
+	config       *config.Config
 }
 
 func NewEmployeeService() *EmployeeService {
 	return &EmployeeService{
 		employeeRepo: repositories.NewEmployeeRepository(),
 		userRepo:     repositories.NewUserRepository(),
+		emailService: NewEmailService(),
+		config:       config.GetConfig(),
 	}
 }
 
-func (s *EmployeeService) CreateEmployee(req models.EmployeeRequest) (*models.Employee, error) {
+type CreateEmployeeResult struct {
+	Employee   *models.Employee
+	SetupToken string
+	Message    string
+}
+
+func (s *EmployeeService) CreateEmployee(req models.EmployeeRequest) (*models.EmployeeCreateResponse, error) {
 	// Generate employee ID if not provided
 	employeeID := req.EmployeeID
 	if employeeID == "" {
@@ -71,14 +81,101 @@ func (s *EmployeeService) CreateEmployee(req models.EmployeeRequest) (*models.Em
 		return nil, err
 	}
 
-	// Create user account for the employee
-	if err := s.createUserForEmployee(employee, req.Email); err != nil {
+	// Create user account with setup token (NO PASSWORD)
+	setupToken, err := s.createUserWithSetupToken(employee, req.Email)
+	if err != nil {
 		// If user creation fails, delete the employee to maintain consistency
 		s.employeeRepo.Delete(employee.ID)
 		return nil, err
 	}
 
-	return employee, nil
+	// Send account setup email using Resend
+	emailErr := s.emailService.SendAccountSetupEmail(req.Email, employee.Name, setupToken)
+	message := "Employee created successfully. Setup email sent."
+	
+	if emailErr != nil {
+		fmt.Printf("⚠️ Failed to send setup email to %s: %v\n", req.Email, emailErr)
+		message = "Employee created successfully, but failed to send setup email. Use the setup token below."
+	}
+
+	response := &models.EmployeeCreateResponse{
+		Employee:   employee.ToResponse(),
+		SetupToken: setupToken,
+		Message:    message,
+	}
+
+	return response, nil
+}
+
+func (s *EmployeeService) createUserWithSetupToken(employee *models.Employee, email string) (string, error) {
+	// Generate username from email
+	username := strings.Split(email, "@")[0]
+	
+	// Check if username already exists, if so, append employee ID
+	existingUserByUsername, _ := s.userRepo.FindByUsername(username)
+	if existingUserByUsername != nil {
+		username = username + "_" + employee.EmployeeID
+	}
+
+	// Generate secure setup token
+	setupToken, err := models.GenerateSecureToken(32)
+	if err != nil {
+		return "", err
+	}
+
+	tokenExpires := time.Now().Add(7 * 24 * time.Hour) // 7 days expiry
+
+	// Create user with setup token (no password)
+	user := &models.User{
+		Username:     username,
+		Email:        email,
+		Password:     "", // No password set initially
+		Role:         "employee",
+		EmployeeID:   &employee.EmployeeID,
+		IsActive:     false, // Not active until setup complete
+		SetupToken:   &setupToken,
+		TokenExpires: &tokenExpires,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if err := s.userRepo.Create(user); err != nil {
+		return "", err
+	}
+
+	return setupToken, nil
+}
+
+// For emergency cases where email fails, allow manual token retrieval
+func (s *EmployeeService) GetEmployeeSetupToken(employeeID string) (string, error) {
+	user, err := s.userRepo.FindByEmployeeID(employeeID)
+	if err != nil {
+		return "", utils.NewNotFoundError("Employee user account not found")
+	}
+
+	if user.SetupToken == nil {
+		return "", utils.NewBadRequestError("No setup token available")
+	}
+
+	if user.TokenExpires != nil && user.TokenExpires.Before(time.Now()) {
+		// Generate new token if expired
+		newToken, err := models.GenerateSecureToken(32)
+		if err != nil {
+			return "", err
+		}
+		
+		newExpiry := time.Now().Add(7 * 24 * time.Hour)
+		user.SetupToken = &newToken
+		user.TokenExpires = &newExpiry
+		
+		if err := s.userRepo.Update(user); err != nil {
+			return "", err
+		}
+		
+		return newToken, nil
+	}
+
+	return *user.SetupToken, nil
 }
 
 func (s *EmployeeService) generateEmployeeID() (string, error) {
@@ -286,4 +383,31 @@ func (s *EmployeeService) UpdateEmployeeStatus(id uint, status string) error {
 	employee.UpdatedAt = time.Now()
 
 	return s.employeeRepo.Update(employee)
+}
+
+func (s *EmployeeService) CompleteAccountSetup(token, newPassword string) error {
+	// Find user by setup token
+	user, err := s.userRepo.FindBySetupToken(token)
+	if err != nil {
+		return utils.NewNotFoundError("Invalid or expired setup token")
+	}
+
+	// Check if token is expired
+	if user.TokenExpires == nil || user.TokenExpires.Before(time.Now()) {
+		return utils.NewBadRequestError("Setup token has expired")
+	}
+
+	// Set new password
+	user.Password = newPassword
+	if err := user.HashPassword(); err != nil {
+		return err
+	}
+
+	// Activate user and clear setup token
+	user.IsActive = true
+	user.SetupToken = nil
+	user.TokenExpires = nil
+	user.UpdatedAt = time.Now()
+
+	return s.userRepo.Update(user)
 }
