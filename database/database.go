@@ -1,14 +1,11 @@
-// database/database.go
 package database
 
 import (
 	"attendance-system/config"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -21,48 +18,26 @@ func InitDB() {
 	cfg := config.GetConfig()
 	
 	var dsn string
-	var dbName string
 	
 	// Priority 1: Use DATABASE_URL (Railway)
 	if cfg.DatabaseURL != "" {
-		dsn = cfg.DatabaseURL
-		dbName = extractDatabaseName(dsn)
-		// Add MySQL parameters if not present
-		if !strings.Contains(dsn, "?") {
-			dsn += "?charset=utf8mb4&parseTime=True&loc=Local"
-		} else {
-			if !strings.Contains(dsn, "charset=") {
-				dsn += "&charset=utf8mb4"
-			}
-			if !strings.Contains(dsn, "parseTime=") {
-				dsn += "&parseTime=True"
-			}
-			if !strings.Contains(dsn, "loc=") {
-				dsn += "&loc=Local"
-			}
-		}
-		log.Println("🔗 Using DATABASE_URL for connection")
+		dsn = convertRailwayDSN(cfg.DatabaseURL)
+		log.Printf("🔗 Using DATABASE_URL for connection: %s", maskPassword(dsn))
 	} else {
-		// Priority 2: Use individual connection parameters (local development)
-		dbName = cfg.DBName
+		// Priority 2: Use individual connection parameters
 		dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			cfg.DBUser,
 			cfg.DBPassword,
 			cfg.DBHost,
 			cfg.DBPort,
-			dbName,
+			cfg.DBName,
 		)
 		log.Println("🔗 Using individual DB config for connection")
 	}
 
-	// First, try to connect without database to create it if needed
-	if err := createDatabaseIfNotExists(dsn, dbName); err != nil {
-		log.Fatal("❌ Failed to create database:", err)
-	}
-
-	// Configure GORM logger based on environment
+	// Configure GORM
 	gormConfig := &gorm.Config{}
-	if os.Getenv("GIN_MODE") == "release" || cfg.GinMode == "release" {
+	if os.Getenv("GIN_MODE") == "release" {
 		gormConfig.Logger = logger.Default.LogMode(logger.Silent)
 	} else {
 		gormConfig.Logger = logger.Default.LogMode(logger.Info)
@@ -71,73 +46,72 @@ func InitDB() {
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), gormConfig)
 	if err != nil {
-		log.Fatal("❌ Failed to connect to database:", err)
+		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
-
-	// Configure connection pool
-	sqlDB, err := DB.DB()
-	if err != nil {
-		log.Fatal("❌ Failed to get database instance:", err)
-	}
-
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	log.Println("✅ Database connected successfully")
 }
 
-// createDatabaseIfNotExists creates the database if it doesn't exist
-func createDatabaseIfNotExists(dsn, dbName string) error {
-	// Extract base DSN without database name
-	baseDSN := strings.Split(dsn, "/")[0] + "/"
+// convertRailwayDSN converts Railway MySQL URL to standard MySQL DSN
+func convertRailwayDSN(railwayURL string) string {
+	// Remove mysql:// prefix
+	cleanURL := strings.Replace(railwayURL, "mysql://", "", 1)
 	
-	// Connect to MySQL without specifying database
-	db, err := sql.Open("mysql", baseDSN)
-	if err != nil {
-		return fmt.Errorf("failed to connect to MySQL: %v", err)
+	// Split into user:pass@host:port/database
+	parts := strings.Split(cleanURL, "@")
+	if len(parts) != 2 {
+		log.Printf("⚠️ Unexpected DSN format, using as-is: %s", maskPassword(railwayURL))
+		return railwayURL
 	}
-	defer db.Close()
-
-	// Check if database exists
-	var exists bool
-	err = db.QueryRow("SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = ?", dbName).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("failed to check database existence: %v", err)
+	
+	userPass := parts[0]
+	hostDB := parts[1]
+	
+	// Extract user and password
+	userParts := strings.Split(userPass, ":")
+	user := userParts[0]
+	password := userParts[1] // This should exist
+	
+	// Extract host:port and database
+	hostParts := strings.Split(hostDB, "/")
+	hostPort := hostParts[0]
+	database := "railway"
+	if len(hostParts) > 1 {
+		database = strings.Split(hostParts[1], "?")[0] // Remove query params
 	}
-
-	// Create database if it doesn't exist
-	if !exists {
-		log.Printf("📁 Database '%s' not found, creating...", dbName)
-		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", dbName))
-		if err != nil {
-			return fmt.Errorf("failed to create database: %v", err)
-		}
-		log.Printf("✅ Database '%s' created successfully", dbName)
-	} else {
-		log.Printf("✅ Database '%s' already exists", dbName)
-	}
-
-	return nil
+	
+	// Construct standard MySQL DSN
+	standardDSN := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		user,
+		password,
+		hostPort,
+		database,
+	)
+	
+	return standardDSN
 }
 
-// extractDatabaseName extracts database name from DSN
-func extractDatabaseName(dsn string) string {
-	// DSN format: mysql://user:pass@host:port/database
-	parts := strings.Split(dsn, "/")
-	if len(parts) >= 4 {
-		// Get the last part and remove any query parameters
-		dbPart := strings.Split(parts[3], "?")[0]
-		return dbPart
+// maskPassword hides password in logs
+func maskPassword(dsn string) string {
+	if strings.Contains(dsn, ":") && strings.Contains(dsn, "@") {
+		parts := strings.Split(dsn, ":")
+		if len(parts) >= 2 {
+			passwordPart := parts[1]
+			if strings.Contains(passwordPart, "@") {
+				masked := strings.Split(passwordPart, "@")[0]
+				if len(masked) > 2 {
+					return strings.Replace(dsn, ":"+masked+"@", ":****@", 1)
+				}
+			}
+		}
 	}
-	return "attendance_system" // fallback
+	return dsn
 }
 
 func CloseDB() {
 	if DB != nil {
 		if sqlDB, err := DB.DB(); err == nil {
 			sqlDB.Close()
-			log.Println("✅ Database connection closed")
 		}
 	}
 }
