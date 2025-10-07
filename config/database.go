@@ -1,84 +1,47 @@
-package config
+// database/database.go
+package database
 
 import (
+	"attendance-system/config"
 	"fmt"
 	"log"
-	"os"
-	"time"
+	"strings"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
-var DB *gorm.DB
-
-type DatabaseConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	Name     string
-}
-
-func loadDBConfig() DatabaseConfig {
-	return DatabaseConfig{
-		Host:     getEnv("DB_HOST", "localhost"),
-		Port:     getEnv("DB_PORT", "3306"),
-		User:     getEnv("DB_USER", "root"),
-		Password: getEnv("DB_PASSWORD", ""),
-		Name:     getEnv("DB_NAME", "attendance_system"),
-	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func InitDB() {
-	config := loadDBConfig()
-
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		config.User,
-		config.Password,
-		config.Host,
-		config.Port,
-		config.Name,
-	)
-
-	// Configure GORM logger based on environment
-	gormConfig := &gorm.Config{}
-	if os.Getenv("GIN_MODE") == "release" {
-		gormConfig.Logger = logger.Default.LogMode(logger.Silent)
+func ConnectDatabase() (*gorm.DB, error) {
+	cfg := config.GetConfig()
+	
+	var dsn string
+	
+	if cfg.DatabaseURL != "" {
+		dsn = cfg.DatabaseURL
+		// Add MySQL parameters if not present
+		if !strings.Contains(dsn, "?") {
+			dsn += "?charset=utf8mb4&parseTime=True&loc=Local"
+		} else {
+			dsn += "&charset=utf8mb4&parseTime=True&loc=Local"
+		}
 	} else {
-		gormConfig.Logger = logger.Default.LogMode(logger.Info)
+		// Fallback to individual connection parameters
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+			cfg.DBUser,
+			cfg.DBPassword,
+			cfg.DBHost,
+			cfg.DBPort,
+			cfg.DBName,
+		)
 	}
 
-	var err error
-	DB, err = gorm.Open(mysql.Open(dsn), gormConfig)
+	log.Printf("🔗 Connecting to database...")
+	
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		return nil, fmt.Errorf("failed to connect to database: %v", err)
 	}
 
-	// Configure connection pool
-	sqlDB, err := DB.DB()
-	if err != nil {
-		log.Fatal("Failed to get database instance:", err)
-	}
-
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
-
-	log.Println("✅ Database connected successfully")
-}
-
-func CloseDB() {
-	if sqlDB, err := DB.DB(); err == nil {
-		sqlDB.Close()
-		log.Println("✅ Database connection closed")
-	}
+	log.Printf("✅ Database connected successfully")
+	return db, nil
 }
