@@ -1,7 +1,7 @@
 package main
 
 import (
-	"attendance-system/config"
+	"attendance-system/database"
 	"attendance-system/middleware"
 	"attendance-system/routes"
 	"log"
@@ -14,13 +14,6 @@ import (
 // @title Attendance System API
 // @version 1.0
 // @description API for Employee Attendance Management System
-// @termsOfService http://swagger.io/terms/
-
-// @contact.name API Support
-// @contact.email support@attendance-system.com
-
-// @license.name MIT
-// @license.url https://opensource.org/licenses/MIT
 
 // @host localhost:8080
 // @BasePath /api/v1
@@ -36,15 +29,22 @@ func main() {
 	}
 
 	// Initialize database
-	config.InitDB()
-	defer config.CloseDB()
+	database.InitDB()
+	defer database.CloseDB()
+
+	// Run migrations on startup
+	if os.Getenv("RUN_MIGRATIONS") == "true" || os.Getenv("APP_ENV") == "production" {
+		if err := database.RunMigrations(database.GetDB()); err != nil {
+			log.Fatal("❌ Failed to run migrations:", err)
+		}
+	}
 
 	// Create Gin router
 	router := gin.New()
 
 	// Middleware
 	router.Use(middleware.Logger())
-	router.Use(middleware.CORS())
+	router.Use(middleware.SetupCORS())
 	router.Use(gin.Recovery())
 
 	// Setup routes
@@ -57,7 +57,7 @@ func main() {
 	}
 
 	log.Printf("🚀 Server running on port %s", port)
-	log.Printf("📚 API Documentation available at http://localhost:%s/api/v1/docs", port)
+	// log.Printf("📚 API Documentation available at http://localhost:%s/api/v1/docs", port)
 	
 	if err := router.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)

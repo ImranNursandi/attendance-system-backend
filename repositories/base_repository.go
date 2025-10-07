@@ -1,7 +1,7 @@
 package repositories
 
 import (
-	"attendance-system/config"
+	"attendance-system/database"
 	"attendance-system/utils"
 	"errors"
 	"strings"
@@ -15,7 +15,7 @@ type BaseRepository struct {
 
 func NewBaseRepository() *BaseRepository {
 	return &BaseRepository{
-		DB: config.DB,
+		DB: database.GetDB(),
 	}
 }
 

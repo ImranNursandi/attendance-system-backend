@@ -132,6 +132,10 @@ JWT_EXPIRY=24h
 CORS_ALLOW_ORIGIN=*
 CORS_ALLOW_METHODS=GET,POST,PUT,DELETE,OPTIONS
 CORS_ALLOW_HEADERS=*
+
+RESEND_API_KEY=API_KEY
+FROM_EMAIL=Attendance System <noreply@example.com>
+FRONTEND_URL=http://localhost:5173
 ```
 
 5. **Run database migrations**
